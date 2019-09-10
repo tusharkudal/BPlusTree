@@ -8,6 +8,7 @@
 package btree;
 
 import java.io.*;
+import java.util.logging.Logger;
 
 import diskmgr.*;
 import bufmgr.*;
@@ -26,7 +27,8 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 
 	private static FileOutputStream fos;
 	private static DataOutputStream trace;
-
+	static Logger logger = Logger.getLogger(BTreeFile.class.getName());//added to create a log file
+	
 	/**
 	 * It causes a structured trace to be written to a file. This output is used
 	 * to drive a visualization tool that shows the inner workings of the b-tree
@@ -357,10 +359,48 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 			UnpinPageException, PinPageException, NodeNotMatchException,
 			ConvertException, DeleteRecException, IndexSearchException,
 			IteratorException, LeafDeleteException, InsertException,
-			IOException
+			IOException {
+			
+			/*PageId get_rootId() throws IOException {
+		        return this.getNextPage();
+		    }*/
+			try {				
+				logger.info("********** Entering insert method ***********");
+				
+				
+				if(headerPage.get_rootId().pid == INVALID_PAGE) { //there is no root page
+					logger.info("********** Creating Root Page ***********");
+					BTLeafPage newRootPage = new BTLeafPage(headerPage.get_keyType());
+					newRootPage.setNextPage(new PageId(INVALID_PAGE));
+					newRootPage.setPrevPage(new PageId(INVALID_PAGE));
+					pinPage(newRootPage.getCurPage());
+					newRootPage.insertRecord(key,rid);
+					unpinPage(newRootPage.getCurPage(), true);// setting the page to dirty
+					updateHeader(newRootPage.getCurPage());
 
-	{
-		
+					
+				} else {//root page already exist
+					logger.info("********** Root Page Exist Creating new pages ***********");
+					KeyDataEntry newRootEntry;
+					newRootEntry = _insert(key, rid, headerPage.get_rootId());
+					logger.info("********** New Root Entry *********** "+ newRootEntry);
+					
+					if(newRootEntry != null) {//split occured
+						BTIndexPage newPage = new BTIndexPage(NodeType.INDEX);
+						newPage.insertKey(newRootEntry.key, ((IndexData) newRootEntry.data).getData());
+						newPage.setPrevPage(headerPage.get_rootId());
+						unpinPage(((IndexData) newRootEntry.data).getData(),true);
+						updateHeader(newPage.getCurPage());
+					}
+				}
+				logger.info("********** Exiting insert method ***********");
+			} catch(LeafInsertRecException e) {
+				e.printStackTrace();
+			} catch(UnpinPageException e) {
+				e.printStackTrace();
+			} catch(IndexInsertRecException e) {
+				e.printStackTrace();
+			} 
 	}
 
 	private KeyDataEntry _insert(KeyClass key, RID rid, PageId currentPageId)
@@ -368,10 +408,40 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 			LeafDeleteException, ConstructPageException, DeleteRecException,
 			IndexSearchException, UnpinPageException, LeafInsertRecException,
 			ConvertException, IteratorException, IndexInsertRecException,
-			KeyNotMatchException, NodeNotMatchException, InsertException
-
-	{
-		// remove the return statement and start your code.
+			KeyNotMatchException, NodeNotMatchException, InsertException {
+			logger.info("********** Entering _insert method ***********");
+			Page page = new Page();
+			pinPage(currentPageId);
+			BTSortedPage currentPage = new BTSortedPage(currentPageId,headerPage.get_keyType());
+			KeyDataEntry upEntry;
+			logger.info("********** Current Page Type *********** "+ currentPage.getType());
+			if(currentPage.getType() == NodeType.INDEX) {
+				logger.info("********** Index Page inserting data ***********");
+				BTIndexPage currentIndexPage = new BTIndexPage(currentPageId,headerPage.get_keyType());
+				PageId currentIndexPageID = currentIndexPage.getCurPage();
+				PageId nextPageID = currentIndexPage.getPageNoByKey(key);
+				unpinPage(currentIndexPageID);
+				upEntry = _insert(key,rid,nextPageID);
+				
+				if(upEntry == null) {
+					logger.info("********** upEntry null ***********");
+					return null;
+				} else {
+					logger.info("********** upEntry not null ***********");
+					if(currentIndexPage.available_space() >= BT.getKeyDataLength(upEntry.key, NodeType.INDEX)) {
+						currentIndexPage.insertKey(upEntry.key,((IndexData) upEntry.data).getData() );
+					} else {
+						BTIndexPage newIndexPage = new BTIndexPage(currentPageId,headerPage.get_keyType());
+						PageId newIndexPageID = currentIndexPage.getCurPage();
+					}
+				}
+			} else if(currentPage.getType() == NodeType.LEAF) {
+				
+			}
+			
+			
+			
+		logger.info("********** Exiting _insert method ***********");	
 		return null;
 	}
 
